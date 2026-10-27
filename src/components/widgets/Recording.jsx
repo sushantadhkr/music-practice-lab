@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Mic, Square, Play, Pause, Download, Trash2 } from "lucide-react";
+import { useAudioDevices } from "../../hooks/useAudioDevices";
 
 const Recording = ({ onUpdateWidgetProps }) => {
   const [isRecording, setIsRecording] = useState(false);
@@ -11,9 +12,16 @@ const Recording = ({ onUpdateWidgetProps }) => {
   const [stream, setStream] = useState(null);
   const [localRecordings, setLocalRecordings] = useState([]); // Always empty on reload
   const [pendingBlob, setPendingBlob] = useState(null);
+  const [countdown, setCountdown] = useState(0);
+  const [countdownBpm, setCountdownBpm] = useState(90); // Same default as metronome
+  const [activeMetronomeBpm, setActiveMetronomeBpm] = useState(null);
+
+  const { devices, refresh: refreshDevices } = useAudioDevices();
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
 
   const audioRef = useRef(null);
   const timerRef = useRef(null);
+  const audioContextRef = useRef(null);
 
   // Update parent when recordings change (debounced)
   useEffect(() => {
@@ -25,6 +33,13 @@ const Recording = ({ onUpdateWidgetProps }) => {
     }
   }, [localRecordings, onUpdateWidgetProps]);
 
+  // Default selected device
+  useEffect(() => {
+    if (!selectedDeviceId && devices.length > 0) {
+      setSelectedDeviceId(devices[0].deviceId);
+    }
+  }, [devices, selectedDeviceId]);
+
   // Format time helper
   const formatTime = useMemo(
     () => (seconds) => {
@@ -35,6 +50,74 @@ const Recording = ({ onUpdateWidgetProps }) => {
     },
     [],
   );
+
+  // Function to play a tone (normal or distorted)
+  const playTone = (frequency = 659.25, duration = 200, distorted = false) => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    const oscillator = audioContextRef.current.createOscillator();
+    const gainNode = audioContextRef.current.createGain();
+
+    if (distorted) {
+      // Create distortion effect for the last count
+      const distortion = audioContextRef.current.createWaveShaper();
+      const makeDistortionCurve = (amount) => {
+        const k = typeof amount === 'number' ? amount : 50;
+        const n_samples = 44100;
+        const curve = new Float32Array(n_samples);
+        const deg = Math.PI / 180;
+
+        for (let i = 0; i < n_samples; ++i) {
+          const x = i * 2 / n_samples - 1;
+          curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+        }
+        return curve;
+      };
+
+      distortion.curve = makeDistortionCurve(400);
+      distortion.oversample = '4x';
+
+      oscillator.connect(distortion);
+      distortion.connect(gainNode);
+    } else {
+      oscillator.connect(gainNode);
+    }
+
+    gainNode.connect(audioContextRef.current.destination);
+
+    oscillator.frequency.setValueAtTime(frequency, audioContextRef.current.currentTime);
+    oscillator.type = distorted ? 'sawtooth' : 'sine';
+
+    const volume = distorted ? 0.4 : 0.3;
+    gainNode.gain.setValueAtTime(volume, audioContextRef.current.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContextRef.current.currentTime + duration / 1000);
+
+    oscillator.start(audioContextRef.current.currentTime);
+    oscillator.stop(audioContextRef.current.currentTime + duration / 1000);
+  };
+
+  // Calculate interval using same formula as metronome
+  const calculateCountdownInterval = (bpm) => 60000 / bpm; // For quarter notes (subdivision = 1)
+
+  // Countdown function
+  const startCountdown = async () => {
+    const bpmToUse = activeMetronomeBpm || countdownBpm;
+    const interval = calculateCountdownInterval(bpmToUse);
+
+    // 3-count countdown: 3, 2, 1
+    for (let i = 3; i > 0; i--) {
+      const isLastCount = i === 1;
+      playTone(659.25, 200, isLastCount); // Last count (1) is distorted
+      setCountdown(i);
+      await new Promise(resolve => setTimeout(resolve, interval));
+    }
+
+    setCountdown(0);
+    // Start recording after countdown
+    await startRecording();
+  };
 
   // keyboard shortcut: 'r' toggling record
   React.useEffect(() => {
@@ -53,7 +136,7 @@ const Recording = ({ onUpdateWidgetProps }) => {
       ) {
         e.preventDefault();
         if (!isRecording) {
-          startRecording();
+          startCountdown();
         } else {
           stopRecording();
         }
@@ -66,13 +149,22 @@ const Recording = ({ onUpdateWidgetProps }) => {
   // Start recording
   const startRecording = async () => {
     try {
+      const audioConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        sampleRate: 44100,
+      };
+      if (selectedDeviceId) {
+        audioConstraints.deviceId = { exact: selectedDeviceId };
+      }
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 44100,
-        },
+        audio: audioConstraints,
       });
+
+      const track = mediaStream.getAudioTracks()[0];
+      const settings = track?.getSettings?.();
+      if (settings?.deviceId) setSelectedDeviceId(settings.deviceId);
+      refreshDevices();
 
       setStream(mediaStream);
       const recorder = new window.MediaRecorder(mediaStream, {
@@ -105,6 +197,11 @@ const Recording = ({ onUpdateWidgetProps }) => {
       console.error("Error accessing microphone:", error);
       alert("Could not access microphone. Please check permissions.");
     }
+  };
+
+  // Handle microphone selection change
+  const handleDeviceChange = (e) => {
+    setSelectedDeviceId(e.target.value);
   };
 
   // Stop recording
@@ -286,15 +383,42 @@ const Recording = ({ onUpdateWidgetProps }) => {
         </div>
       </div>
 
+      {/* Microphone selector */}
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          Microphone:
+        </label>
+        <select
+          value={selectedDeviceId}
+          onChange={handleDeviceChange}
+          disabled={isRecording || countdown > 0}
+          className="flex-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1.5 disabled:opacity-50"
+        >
+          {devices.length === 0 && (
+            <option value="">No microphones found</option>
+          )}
+          {devices.map((d, i) => (
+            <option key={d.deviceId || i} value={d.deviceId}>
+              {d.label || `Microphone ${i + 1}`}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Recording Controls */}
       <div className="flex items-center justify-center gap-3">
         {!isRecording ? (
           <button
-            onClick={startRecording}
-            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+            onClick={startCountdown}
+            disabled={countdown > 0}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+              countdown > 0
+                ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                : 'bg-red-600 hover:bg-red-700 text-white'
+            }`}
           >
             <Mic className="w-4 h-4" />
-            Start Recording{" "}
+            {countdown > 0 ? `Starting in ${countdown}...` : 'Start Recording'}
             <span className="hidden lg:inline text-xs bg-red-400 px-2 py-1 rounded">
               r
             </span>
@@ -378,4 +502,3 @@ const Recording = ({ onUpdateWidgetProps }) => {
 };
 
 export default Recording;
-

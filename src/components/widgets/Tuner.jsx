@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Mic, MicOff, Music } from "lucide-react";
+import { useAudioDevices } from "../../hooks/useAudioDevices";
 
 // Note names for chromatic scale
 const NOTE_NAMES = [
@@ -145,6 +146,9 @@ const Tuner = ({ showVisualizer = false, onUpdateWidgetProps }) => {
   const [localShowVisualizer, setLocalShowVisualizer] =
     useState(showVisualizer);
 
+  const { devices, refresh: refreshDevices } = useAudioDevices();
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
+
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
   const rafRef = useRef(null);
@@ -157,19 +161,35 @@ const Tuner = ({ showVisualizer = false, onUpdateWidgetProps }) => {
     setLocalShowVisualizer(showVisualizer);
   }, [showVisualizer]);
 
+  // Default selected device
+  useEffect(() => {
+    if (!selectedDeviceId && devices.length > 0) {
+      setSelectedDeviceId(devices[0].deviceId);
+    }
+  }, [devices, selectedDeviceId]);
+
   // Start microphone
-  const startMic = async () => {
+  const startMic = async (deviceIdOverride) => {
     setError("");
+    const deviceId = deviceIdOverride ?? selectedDeviceId;
     try {
+      const audioConstraints = {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        sampleRate: 44100,
+      };
+      if (deviceId) {
+        audioConstraints.deviceId = { exact: deviceId };
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          sampleRate: 44100,
-        },
+        audio: audioConstraints,
       });
       streamRef.current = stream;
+      const track = stream.getAudioTracks()[0];
+      const settings = track?.getSettings?.();
+      if (settings?.deviceId) setSelectedDeviceId(settings.deviceId);
+      refreshDevices();
       audioCtxRef.current = new (window.AudioContext ||
         window.webkitAudioContext)();
 
@@ -209,6 +229,19 @@ const Tuner = ({ showVisualizer = false, onUpdateWidgetProps }) => {
     if (fadeTimeoutRef.current) {
       clearTimeout(fadeTimeoutRef.current);
       fadeTimeoutRef.current = null;
+    }
+  };
+
+  // Handle microphone selection change
+  const handleDeviceChange = async (e) => {
+    const newId = e.target.value;
+    setSelectedDeviceId(newId);
+    if (isListening) {
+      stopMic();
+      // Small delay to release previous device
+      setTimeout(() => {
+        startMic(newId);
+      }, 50);
     }
   };
 
@@ -372,6 +405,27 @@ const Tuner = ({ showVisualizer = false, onUpdateWidgetProps }) => {
         <span className="text-xs text-gray-500">
           {isListening ? "Listening..." : ""}
         </span>
+      </div>
+
+      {/* Microphone selector */}
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-medium text-gray-600 dark:text-gray-300">
+          Microphone:
+        </label>
+        <select
+          value={selectedDeviceId}
+          onChange={handleDeviceChange}
+          className="flex-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1.5"
+        >
+          {devices.length === 0 && (
+            <option value="">No microphones found</option>
+          )}
+          {devices.map((d, i) => (
+            <option key={d.deviceId || i} value={d.deviceId}>
+              {d.label || `Microphone ${i + 1}`}
+            </option>
+          ))}
+        </select>
       </div>
 
       {error && <div className="text-red-600 text-sm">{error}</div>}
