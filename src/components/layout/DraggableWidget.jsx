@@ -101,7 +101,7 @@ const DraggableWidget = ({
           </button>
         </div>
 
-        <div className="p-3">
+        <div className="p-3 overflow-y-auto overflow-x-hidden" style={{ maxHeight: "calc(100% - 56px)" }}>
           {React.isValidElement(children)
             ? React.cloneElement(children, {
                 widgetId: widget.id,

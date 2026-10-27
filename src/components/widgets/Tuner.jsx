@@ -408,14 +408,14 @@ const Tuner = ({ showVisualizer = false, onUpdateWidgetProps }) => {
       </div>
 
       {/* Microphone selector */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-1 min-w-0">
         <label className="text-sm font-medium text-gray-600 dark:text-gray-300">
-          Microphone:
+          Microphone
         </label>
         <select
           value={selectedDeviceId}
           onChange={handleDeviceChange}
-          className="flex-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1.5"
+          className="w-full min-w-0 truncate text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1.5"
         >
           {devices.length === 0 && (
             <option value="">No microphones found</option>

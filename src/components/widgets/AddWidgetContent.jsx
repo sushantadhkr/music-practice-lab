@@ -146,7 +146,12 @@ const AddWidgetContent = ({ onClose, setWidgets, widgets = [] }) => {
       onClose();
       return;
     }
-    const defaultSize = { w: 320, h: 240 };
+    const defaultSize =
+      widget === "Tuner"
+        ? { w: 340, h: 520 }
+        : widget === "Recording"
+          ? { w: 340, h: 420 }
+          : { w: 320, h: 240 };
     const pos = findNonOverlappingPosition(defaultSize);
     const newWidget = {
       id: `${widget.toLowerCase()}-${Date.now()}`, // Unique ID
