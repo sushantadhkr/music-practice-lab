@@ -45,6 +45,9 @@ const Header = ({ onAddWidget, onImportWidgets }) => {
       >
         <Plus className="w-5 h-5" />
         <span className="hidden sm:inline">Add Widget</span>
+        <span className="hidden sm:inline text-xs bg-blue-500 px-2 py-1 rounded">
+          Ctrl+K
+        </span>
       </button>
       <button
         className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 w-fit bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
@@ -111,7 +114,7 @@ const Header = ({ onAddWidget, onImportWidgets }) => {
 
       {/* Mobile dropdown */}
       {menuOpen && (
-        <div className="md:hidden flex gap-2 border-t p-4 border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        <div className="md:hidden flex flex-row-reverse gap-2 border-t p-4 border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
           {ActionButtons}
         </div>
       )}

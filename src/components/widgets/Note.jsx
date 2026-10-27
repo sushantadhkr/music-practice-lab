@@ -24,3 +24,4 @@ const Note = ({ text: textProp, onUpdateWidgetProps }) => {
 };
 
 export default Note;
+
