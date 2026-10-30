@@ -182,9 +182,24 @@ const Tuner = ({ showVisualizer = false, onUpdateWidgetProps }) => {
       if (deviceId) {
         audioConstraints.deviceId = { exact: deviceId };
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: audioConstraints,
-      });
+
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: audioConstraints,
+        });
+      } catch (e) {
+        // If the chosen device id is stale/unavailable, fall back to default mic
+        if (deviceId && e && e.name === "OverconstrainedError") {
+          delete audioConstraints.deviceId;
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: audioConstraints,
+          });
+        } else {
+          throw e;
+        }
+      }
+
       streamRef.current = stream;
       const track = stream.getAudioTracks()[0];
       const settings = track?.getSettings?.();

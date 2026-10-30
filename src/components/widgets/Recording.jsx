@@ -157,9 +157,21 @@ const Recording = ({ onUpdateWidgetProps }) => {
       if (selectedDeviceId) {
         audioConstraints.deviceId = { exact: selectedDeviceId };
       }
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: audioConstraints,
-      });
+      let mediaStream;
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: audioConstraints,
+        });
+      } catch (e) {
+        if (selectedDeviceId && e && e.name === "OverconstrainedError") {
+          delete audioConstraints.deviceId;
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: audioConstraints,
+          });
+        } else {
+          throw e;
+        }
+      }
 
       const track = mediaStream.getAudioTracks()[0];
       const settings = track?.getSettings?.();
